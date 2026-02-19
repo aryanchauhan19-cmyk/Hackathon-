@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>TwinX Delhi | Smart City Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.110/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/TextPlugin.min.js"></script>
+    <script src="https://unpkg.com/@studio-freight/lenis@1.0.42/dist/lenis.min.js"></script>
+
+    <style>
+        /* --- GLOBAL THEME --- */
+        :root { 
+            --neon-cyan: #00f2ff; 
+            --neon-red: #ff003c;
+            --neon-green: #00ff88;
+            --glass-bg: rgba(20, 25, 40, 0.65);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #e0e6ed;
+            --text-muted: #94a3b8;
+        }
+
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background: #050a10; 
+            font-family: 'Rajdhani', sans-serif; 
+            color: var(--text-main);
+            cursor: none; /* Hide default cursor initially */
+        }
+
+        /* --- 1. CUSTOM CURSOR (AIR PURIFIER) --- */
+        #cursor {
+            position: fixed; top: 0; left: 0; width: 40px; height: 40px;
+            border: 2px solid var(--neon-cyan); border-radius: 50%;
+            transform: translate(-50%, -50%); pointer-events: none; z-index: 10000;
+            box-shadow: 0 0 15px var(--neon-cyan);
+            transition: width 0.2s, height 0.2s;
+            mix-blend-mode: difference;
+        }
+        #cursor::after { /* The "Fan" inside */
+            content: ''; position: absolute; top: 50%; left: 50%;
+            width: 20px; height: 20px;
+            border-top: 2px solid var(--neon-cyan); border-bottom: 2px solid var(--neon-cyan);
+            border-radius: 50%; transform: translate(-50%, -50%);
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+
+        /* --- 2. LANDING LAYER (FOG + INTRO) --- */
+        #landing-layer {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 9999; background: linear-gradient(to bottom, #1a1f24, #0d1216);
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            overflow: hidden;
+        }
+
+        /* Fog Animation */
+        .fog-container {
+            position: absolute; width: 100%; height: 100%; top: 0; left: 0; overflow: hidden; z-index: 1;
+        }
+        .fog-img {
+            position: absolute; height: 100vh; width: 300vw;
+            background: url('https://raw.githubusercontent.com/danielstuart14/CSS_FOG_ANIMATION/master/fog1.png') repeat-x;
+            background-size: contain; animation: fogAnim 60s linear infinite;
+        }
+        .fog-img-2 {
+            position: absolute; height: 100vh; width: 300vw;
+            background: url('https://raw.githubusercontent.com/danielstuart14/CSS_FOG_ANIMATION/master/fog2.png') repeat-x;
+            background-size: contain; animation: fogAnim 40s linear infinite reverse;
+            z-index: 2; opacity: 0.5;
+        }
+        @keyframes fogAnim { 0% { transform: translate3d(0, 0, 0); } 100% { transform: translate3d(-200vw, 0, 0); } }
+
+        /* Landing Content */
+        .landing-ui { z-index: 10; text-align: center; position: relative; }
+        
+        .main-header {
+            font-family: 'Orbitron', sans-serif; font-size: 80px; color: #fff; 
+            letter-spacing: -2px; margin-bottom: 40px; text-transform: uppercase;
+            filter: blur(8px); transition: filter 0.5s ease;
+        }
+        .main-header:hover { filter: blur(0px); text-shadow: 0 0 30px var(--neon-cyan); }
+
+        .init-btn {
+            background: rgba(0,0,0,0.5); border: 1px solid var(--neon-cyan); color: var(--neon-cyan);
+            padding: 15px 40px; font-family: 'Rajdhani'; font-size: 18px; font-weight: 700;
+            cursor: pointer; letter-spacing: 2px; text-transform: uppercase; transition: 0.3s;
+            backdrop-filter: blur(5px);
+        }
+        .init-btn:hover { background: var(--neon-cyan); color: #000; box-shadow: 0 0 30px var(--neon-cyan); }
+
+        /* Boot Loader */
+        .loader-container { width: 300px; display: none; z-index: 20; position: relative; margin-top: 30px; }
+        .loader-bar { width: 100%; height: 2px; background: #333; position: relative; }
+        .loader-progress { position: absolute; height: 100%; width: 0%; background: var(--neon-cyan); }
+        .boot-text { color: var(--neon-green); font-size: 12px; margin-top: 10px; text-align: center; font-family: 'Orbitron'; }
+
+
+        /* --- 3. DASHBOARD UI (GLASSMORPHISM) --- */
+        
+        /* Top Pill Nav */
+        .top-nav {
+            position: fixed; top: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; display: flex; gap: 5px; padding: 8px;
+            background: var(--glass-bg); backdrop-filter: blur(15px);
+            border: 1px solid var(--glass-border); border-radius: 50px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5); opacity: 0;
+        }
+        .nav-item {
+            padding: 10px 25px; border-radius: 30px; cursor: pointer;
+            font-weight: 600; text-transform: uppercase; font-size: 14px;
+            color: var(--text-muted); transition: all 0.3s;
+        }
+        .nav-item.active { color: #000; background: var(--neon-cyan); box-shadow: 0 0 20px rgba(0,242,255,0.4); }
+
+        /* Left Floating Panel */
+        #dashboard-panel {
+            position: absolute; top: 90px; left: 20px; bottom: 20px; width: 350px;
+            background: var(--glass-bg); backdrop-filter: blur(20px);
+            border: 1px solid var(--glass-border); border-radius: 20px;
+            z-index: 100; display: flex; flex-direction: column;
+            transform: translateX(-150%); overflow: hidden;
+        }
+        .panel-header { padding: 20px; border-bottom: 1px solid rgba(255,255,255,0.05); }
+        .panel-title { font-family: 'Orbitron'; font-size: 18px; color: var(--neon-cyan); margin: 0; }
+        
+        .panel-content { flex: 1; overflow-y: auto; padding: 20px; scrollbar-width: none; }
+        .panel-content::-webkit-scrollbar { display: none; }
+
+        /* Gauge */
+        .aqi-container { display: flex; justify-content: center; margin-bottom: 30px; }
+        .gauge-outer {
+            width: 180px; height: 180px; border-radius: 50%;
+            background: conic-gradient(var(--neon-green) 0deg, rgba(255,255,255,0.05) 0deg);
+            display: flex; justify-content: center; align-items: center;
+            box-shadow: 0 0 30px rgba(0,0,0,0.3);
+        }
+        .gauge-inner {
+            width: 150px; height: 150px; background: #111520; border-radius: 50%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+        }
+        .gauge-value { font-size: 48px; font-weight: 700; color: #fff; line-height: 1; }
+        .gauge-status { font-size: 14px; font-weight: 600; margin-top: 5px; color: var(--neon-green); }
+
+        /* Sliders */
+        
+
+        /* Action Grid */
+        .section-title { font-size: 12px; text-transform: uppercase; letter-spacing: 2px; color: var(--text-muted); margin-bottom: 15px; border-left: 3px solid var(--neon-cyan); padding-left: 10px; }
+        .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+        .action-card {
+            background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 12px; padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+            cursor: pointer; transition: 0.3s; text-align: center;
+        }
+        .action-card i { font-size: 20px; color: var(--text-muted); }
+        .action-card.active { background: rgba(0, 242, 255, 0.1); border-color: var(--neon-cyan); box-shadow: 0 0 15px rgba(0, 242, 255, 0.15); }
+        .action-card.active i { color: var(--neon-cyan); }
+
+        /* Chat */
+        #chatBox { background: rgba(0,0,0,0.3); border-radius: 12px; padding: 15px; border: 1px solid rgba(255,255,255,0.05); }
+        #chatLog { height: 100px; overflow-y: auto; font-size: 13px; margin-bottom: 10px; color: var(--text-muted); }
+        #chatInput { width: 70%; background: rgba(255,255,255,0.05); border: none; padding: 8px; color: #fff; }
+        .btn-send { width: 20%; background: var(--neon-cyan); border: none; cursor: pointer; font-weight: bold; }
+
+    </style>
+</head>
+<body>
+
+    <div id="cursor"></div>
+
+    <div id="landing-layer">
+        <div class="fog-container">
+            <div class="fog-img"></div>
+            <div class="fog-img-2"></div>
+        </div>
+
+        <div class="landing-ui">
+            <div style="font-size: 14px; letter-spacing: 4px; color: #888; margin-bottom: 10px;">CDH DELHI PRESENTS</div>
+            <h1 class="main-header">TWINX DELHI</h1>
+            <button id="initBtn" class="init-btn" onclick="initializeSystem()">INITIALIZE SIMULATOR</button>
+        </div>
+        
+        <div class="loader-container">
+            <div class="loader-bar"><div class="loader-progress"></div></div>
+            <div class="boot-text"></div>
+        </div>
+    </div>
+
+    <div class="top-nav">
+        <div class="nav-item active">Live Sim</div>
+        <div class="nav-item">Historical</div>
+        <div class="nav-item">Sensors</div>
+        <div class="nav-item">Settings</div>
+    </div>
+
+    <div id="dashboard-panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Pollution Control</h2>
+        </div>
+        <div class="panel-content" id="panel-content">
+            
+            <div class="aqi-container">
+                <div class="gauge-outer" id="gaugeOuter">
+                    <div class="gauge-inner">
+                        <div class="gauge-value" id="aqiDisplay">150</div>
+                        <div class="gauge-label">AQI Level</div>
+                        <div class="gauge-status" id="aqiStatus">Unhealthy</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <div class="label-row"><span>Pollution Injection</span> <span id="aqiValDisplay">150</span></div>
+                <input type="range" id="aqiSlider" min="50" max="600" value="150">
+            </div>
+            <div class="control-group">
+                <div class="label-row"><span>Wind/Dispersion</span> <span>x10</span></div>
+                <input type="range" id="speedSlider" min="1" max="100" value="10">
+            </div>
+
+            <div class="section-title">Active Countermeasures</div>
+            <div class="action-grid">
+                <div class="action-card" onclick="toggleCard(this, 'm_truck')"><i class="fas fa-truck-moving"></i><span>Truck Ban</span><input type="checkbox" id="m_truck" style="display:none"></div>
+                <div class="action-card" onclick="toggleCard(this, 'm_construction')"><i class="fas fa-trowel-bricks"></i><span>No Constr.</span><input type="checkbox" id="m_construction" style="display:none"></div>
+                <div class="action-card" onclick="toggleCard(this, 'm_industry')"><i class="fas fa-industry"></i><span>Factory Stop</span><input type="checkbox" id="m_industry" style="display:none"></div>
+                <div class="action-card" onclick="toggleCard(this, 'm_oddeven')"><i class="fas fa-car-side"></i><span>Odd-Even</span><input type="checkbox" id="m_oddeven" style="display:none"></div>
+                <div class="action-card" onclick="toggleCard(this, 'm_dg')"><i class="fas fa-bolt"></i><span>Gen. Ban</span><input type="checkbox" id="m_dg" style="display:none"></div>
+                <div class="action-card" onclick="toggleCard(this, 'm_wfh')"><i class="fas fa-house-laptop"></i><span>WFH Mode</span><input type="checkbox" id="m_wfh" style="display:none"></div>
+            </div>
+
+            <div class="section-title">AI Strategist</div>
+            <div id="impactDesc" style="font-size:12px; color:var(--neon-green); margin-bottom:10px;">System Standing By.</div>
+            <div id="chatBox">
+                <div id="chatLog">Gemini: Describe a scenario.</div>
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <input type="text" id="chatInput" placeholder="Command...">
+                    <button class="btn-send" onclick="sendToAI()">></button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="cesiumContainer"></div>
+
+    <script>
+        // --- CURSOR LOGIC ---
+        const cursor = document.getElementById('cursor');
+        document.addEventListener('mousemove', (e) => {
+            cursor.style.left = e.clientX + 'px';
+            cursor.style.top = e.clientY + 'px';
+        });
+
+        // Hover Effect on Title (Grow cursor)
+        document.querySelector('.main-header').addEventListener('mouseenter', () => {
+            cursor.style.width = '80px'; cursor.style.height = '80px';
+            cursor.style.mixBlendMode = 'normal'; cursor.style.boxShadow = '0 0 30px #fff';
+            cursor.style.borderColor = '#fff';
+        });
+        document.querySelector('.main-header').addEventListener('mouseleave', () => {
+            cursor.style.width = '40px'; cursor.style.height = '40px';
+            cursor.style.mixBlendMode = 'difference'; cursor.style.boxShadow = '0 0 15px var(--neon-cyan)';
+            cursor.style.borderColor = 'var(--neon-cyan)';
+        });
+
+        // --- BOOT SEQUENCE ---
+        function initializeSystem() {
+            // Hide Buttons
+            gsap.to(".init-btn", { opacity: 0, pointerEvents: "none", duration: 0.3 });
+            gsap.to(".main-header", { opacity: 0, scale: 1.5, filter: "blur(20px)", duration: 0.5 });
+            
+            // "Suck away" the fog
+            gsap.to(".fog-container", { scale: 3, opacity: 0, duration: 2, ease: "power2.in" });
+
+            // Show Loader
+            document.querySelector('.loader-container').style.display = 'block';
+            const tl = gsap.timeline({onComplete: revealDashboard});
+            
+            tl.to(".loader-progress", {width: "100%", duration: 2, ease: "power2.inOut"})
+              .to(".boot-text", {text: "PURIFYING AIR FILTERS...", duration: 0.5}, "<")
+              .to(".boot-text", {text: "LOADING CITY TWIN...", duration: 0.8}, ">")
+              .to(".boot-text", {text: "SYSTEM ONLINE.", color: "#00f2ff", duration: 0.5}, ">");
+        }
+
+        function revealDashboard() {
+            // Lift Landing Screen
+            gsap.to("#landing-layer", {y: "-100%", duration: 1.2, ease: "power4.inOut"});
+            
+            // Restore Cursor
+            document.body.style.cursor = "auto";
+            document.getElementById('cursor').style.display = "none";
+
+            // Reveal Map & UI
+            gsap.to("#cesiumContainer", {opacity: 1, duration: 1});
+            gsap.to(".top-nav", {opacity: 1, y: 0, duration: 0.8, delay: 0.5});
+            gsap.to("#dashboard-panel", {x: 0, duration: 0.8, delay: 0.8, ease: "back.out(1.2)"});
+            
+            initCesium();
+        }
+
+        // --- DASHBOARD LOGIC ---
+        function toggleCard(card, checkboxId) {
+            const checkbox = document.getElementById(checkboxId);
+            checkbox.checked = !checkbox.checked;
+            checkbox.checked ? card.classList.add('active') : card.classList.remove('active');
+            updateMeasures(checkboxId, checkbox.checked);
+        }
+
+        function updateGauge(aqi) {
+            const display = document.getElementById('aqiDisplay');
+            const status = document.getElementById('aqiStatus');
+            const outer = document.getElementById('gaugeOuter');
+            
+            display.innerText = Math.round(aqi);
+            
+            let color = '#00ff88'; let label = 'Good';
+            let percentage = (aqi / 500) * 100; if(percentage > 100) percentage = 100;
+
+            if (aqi > 50) { color = '#fcee0a'; label = 'Moderate'; }
+            if (aqi > 100) { color = '#ff9900'; label = 'Poor'; }
+            if (aqi > 200) { color = '#ff003c'; label = 'Severe'; }
+            if (aqi > 300) { color = '#7a00ff'; label = 'Hazardous'; }
+
+            status.innerText = label; status.style.color = color;
+            outer.style.background = `conic-gradient(${color} ${percentage * 3.6}deg, rgba(255,255,255,0.05) 0deg)`;
+        }
+
+        // --- CESIUM & AI LOGIC ---
+        const API_KEY = "AIzaSyBrKYHgIkNV-5QhSZmlCaq41y7Wzqp_GA4";
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
+        Cesium.Ion.defaultAccessToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI3MzI3MGIyZS1jZDEwLTRiOTYtOTJjNS1mZTFlOGVkNDg4NzUiLCJpZCI6Mzg1NzcyLCJpYXQiOjE3Njk5NDc2NTJ9.fvUHQUlAGhWQE_8fClYm3sWd0pnmkD7bKYUjQfrA_5g';
+
+        let viewer, currentAqi = 150, aiEffectiveness = 0, manualSpeed = 10;
+        let activeMeasures = [];
+
+        async function initCesium() {
+            if(viewer) return;
+            try {
+                viewer = new Cesium.Viewer('cesiumContainer', {
+                    terrainProvider: await Cesium.createWorldTerrainAsync(),
+                    baseLayerPicker: false, animation: false, timeline: false, 
+                    selectionIndicator: false, infoBox: false, geocoder: false, homeButton: false, sceneModePicker: false
+                });
+
+                const buildings = await Cesium.createOsmBuildingsAsync();
+                viewer.scene.primitives.add(buildings);
+                viewer.scene.fog.enabled = true;
+                
+                viewer.camera.flyTo({ 
+                    destination: Cesium.Cartesian3.fromDegrees(77.3653, 28.5192, 1000), 
+                    orientation: { pitch: Cesium.Math.toRadians(-25) } 
+                });
+
+                viewer.scene.postRender.addEventListener(() => {
+                    if (currentAqi > 50.1) {
+                        const dropRate = ((aiEffectiveness * 1.5) + manualSpeed) / 8000;
+                        currentAqi -= dropRate;
+                        updateGauge(currentAqi);
+                    }
+                    updateFog();
+                });
+                
+                // Smooth Scroll
+                const lenis = new Lenis({ wrapper: document.getElementById('panel-content'), content: document.getElementById('panel-content') });
+                function raf(time) { lenis.raf(time); requestAnimationFrame(raf); } requestAnimationFrame(raf);
+
+            } catch (e) { console.log("Cesium Error:", e); }
+        }
+
+        document.getElementById('aqiSlider').oninput = (e) => {
+            currentAqi = parseInt(e.target.value);
+            document.getElementById('aqiValDisplay').innerText = currentAqi;
+            updateGauge(currentAqi);
+        };
+        document.getElementById('speedSlider').oninput = (e) => manualSpeed = parseInt(e.target.value);
+
+        function updateMeasures(id, isActive) {
+            isActive ? activeMeasures.push(id) : activeMeasures = activeMeasures.filter(m => m !== id);
+            clearTimeout(window.aiTimer); window.aiTimer = setTimeout(() => analyzeCombo(), 800);
+        }
+
+        async function analyzeCombo() {
+            if (activeMeasures.length === 0) { aiEffectiveness = 0; document.getElementById('impactDesc').innerText = "All systems offline."; return; }
+            const prompt = `AQI: ${currentAqi}. Active: ${activeMeasures.join(", ")}. JSON ONLY: {"score": 0-100, "summary": "Short prediction"}`;
+            try {
+                const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+                const data = await response.json();
+                let raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+                const res = JSON.parse(raw);
+                aiEffectiveness = res.score;
+                document.getElementById('impactDesc').innerHTML = `<b>AI Projection:</b> ${res.summary}`;
+            } catch (e) { aiEffectiveness = activeMeasures.length * 10; }
+        }
+
+        async function sendToAI() {
+            const input = document.getElementById("chatInput");
+            const log = document.getElementById("chatLog");
+            const userText = input.value.trim();
+            if (!userText) return;
+
+            log.innerHTML += `<div style="color:#fff; margin-top:5px;">You: ${userText}</div>`;
+            input.value = ""; log.scrollTop = log.scrollHeight;
+
+            const prompt = `User: "${userText}". Actions: [m_truck, m_construction, m_industry, m_oddeven, m_dg, m_wfh]. JSON ONLY: {"recommend": ["m_truck"], "reason": "why"}`;
+            
+            try {
+                const response = await fetch(API_URL, { method: 'POST', body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) });
+                const data = await response.json();
+                let raw = data.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+                const res = JSON.parse(raw);
+                res.recommend.forEach(id => {
+                    const cb = document.getElementById(id);
+                    if(cb && !cb.checked) toggleCard(cb.parentElement, id);
+                });
+                log.innerHTML += `<div style="color:var(--neon-cyan); margin-top:5px;">AI: ${res.reason}</div>`;
+            } catch (e) { log.innerHTML += `<div style="color:red">AI Error.</div>`; }
+            log.scrollTop = log.scrollHeight;
+        }
+
+        function updateFog() {
+            if(!viewer) return;
+            viewer.scene.fog.density = (currentAqi / 1000) * 0.055;
+            const factor = Math.min(currentAqi / 500, 1.0);
+            viewer.scene.fog.color = Cesium.Color.lerp(Cesium.Color.fromCssColorString('#a4c2f4'), Cesium.Color.fromCssColorString('#4d3d22'), factor, new Cesium.Color());
+        }
+    </script>
+</body>
+</html>
